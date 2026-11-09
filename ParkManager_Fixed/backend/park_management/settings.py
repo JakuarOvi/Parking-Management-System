@@ -1,7 +1,8 @@
 """Django settings for the Park Management System."""
 import os
-from datetime import timedelta
 from pathlib import Path
+
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -34,6 +35,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -58,34 +60,43 @@ TEMPLATES = [{
 WSGI_APPLICATION = "park_management.wsgi.application"
 ASGI_APPLICATION = "park_management.asgi.application"
 
-# Use SQLite out of the box so a fresh clone can run without a local MySQL
-# server. Set DB_ENGINE=django.db.backends.mysql to opt into MySQL.
-DB_ENGINE = os.environ.get("DB_ENGINE", "django.db.backends.sqlite3")
-if DB_ENGINE.endswith("mysql"):
-    try:
-        import pymysql
-        pymysql.install_as_MySQLdb()
-    except ImportError as exc:
-        raise RuntimeError("Install PyMySQL to use the MySQL database backend.") from exc
-
-if DB_ENGINE.endswith("sqlite3"):
-    DATABASES = {"default": {
-        "ENGINE": DB_ENGINE,
-        "NAME": os.environ.get("DB_NAME", str(BASE_DIR / "db.sqlite3")),
-    }}
+# Use the host's DATABASE_URL when provided, otherwise use SQLite locally.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=not DEBUG,
+        )
+    }
 else:
-    DATABASES = {"default": {
-        "ENGINE": DB_ENGINE,
-        "NAME": os.environ.get("DB_NAME", "park_management"),
-        "USER": os.environ.get("DB_USER", "root"),
-        "PASSWORD": os.environ.get("DB_PASSWORD", ""),
-        "HOST": os.environ.get("DB_HOST", "127.0.0.1"),
-        "PORT": os.environ.get("DB_PORT", "3306"),
-        "OPTIONS": {
-            "charset": "utf8mb4",
-            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
-    }}
+    DB_ENGINE = os.environ.get("DB_ENGINE", "django.db.backends.sqlite3")
+    if DB_ENGINE.endswith("mysql"):
+        try:
+            import pymysql
+            pymysql.install_as_MySQLdb()
+        except ImportError as exc:
+            raise RuntimeError("Install PyMySQL to use the MySQL database backend.") from exc
+
+    if DB_ENGINE.endswith("sqlite3"):
+        DATABASES = {"default": {
+            "ENGINE": DB_ENGINE,
+            "NAME": os.environ.get("DB_NAME", str(BASE_DIR / "db.sqlite3")),
+        }}
+    else:
+        DATABASES = {"default": {
+            "ENGINE": DB_ENGINE,
+            "NAME": os.environ.get("DB_NAME", "park_management"),
+            "USER": os.environ.get("DB_USER", "root"),
+            "PASSWORD": os.environ.get("DB_PASSWORD", ""),
+            "HOST": os.environ.get("DB_HOST", "127.0.0.1"),
+            "PORT": os.environ.get("DB_PORT", "3306"),
+            "OPTIONS": {
+                "charset": "utf8mb4",
+                "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+            },
+        }}
 
 AUTH_USER_MODEL = "parking.User"
 
@@ -145,8 +156,14 @@ CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LANGUAGE_CODE = "en-us"
